@@ -1,0 +1,470 @@
+---
+title: 'Beyond the SAT: Factors Influencing Test Scores'
+author: "Group 8 - Gloria Park, Kaelyn Lee, Margaret Liu, Chloe Seol, Will Glauberman "
+date: "2023-08-04"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999, digits = 3)  # controls base R output
+# Package setup
+if(!require("pacman")) install.packages("pacman")
+
+pacman::p_load(car, tidyverse, dplyr, ggplot2, data.table, lubridate, 
+               glmnet, kableExtra, stargazer, scales, viridis, knitr, readr, usmap, pheatmap)
+```
+
+# Introduction / Goal of the Study
+
+SAT scores have traditionally been considered a baseline measure of college qualification and a reflection of a student's academic capacity. The significance of these scores, however, has been subject to scrutiny due to criticisms of equability as socioeconomic background, ethnicity, and geopolitical location can influence students' SAT scores. Subsequently, some argue that SAT should no longer be a credible and impartial criterion in the college admission system.
+
+While several universities have chosen to go test optional or test blind after the pandemic, more than 1.7 million high school students continue to take the SAT. Notwithstanding, the exam is still a critical factor in the college admission system. Noting the role SAT holds, we aim to shed light on the complexities surround SAT scores in order to determine whether or not standardized scores are pure measures of academic merit. Understanding the implications of the SAT shall help education stakeholders (i.e. high schools and colleges) to make informed decisions to devise inclusive and effective ways to promote educational equity.
+
+# Cleaning up the Data Set
+
+There were 4 major edits to the original data set: (1) Removing insignificant variables, (2) Removing NAs, (3) Aggregating SAT section scores into new composite variable, (4) Aggregating gender percentage into new variable.
+
+First, in order to "clean" the data set, insignificant variables (i.e. phone number of school) were omitted. Only significant variables such as those which provided information regarding student body demographics or school financial information were kept. Selected variables (those kept in the data set) were percentage of various races, students with special needs, students who are economically disadvantaged, gender, and average school expenditure.
+
+Second, schools without SAT scores were removed. The data set was comprised of most public schools in Massachusetts, meaning some schools (elementary and middle school) did not data on SAT scores as the exam is typically taken by high school students. Consequently, schools without SAT scores were removed from the data set (NA.omit) as they are futile.
+
+Third, since the data set separated the Reading, Writing, and Math score on the SAT into different columns, a new variable of the average composite SAT score was created for simplicity.
+
+Fourth, as the percentage of males and females would be co-linear variables when utilized in a model, a new variable called "ratio.gender" was created. The variable contains the ratio of males over females in a given school.
+
+In total, the cleaned data set included 15 variables for each school. "select", "na.omit", and "mutate" functions were used to clean up the data set.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(pacman)
+
+data.unedited <- read.csv("data/MA_Public_Schools_2017.csv", header = TRUE)
+data.clean1 <- select(data.unedited, 2, 8, 13, 33, 35, 37, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 55, 59, 72, 95, 96, 97) 
+data.clean2 <- data.clean1%>%
+  na.omit() 
+data.clean3 <- data.clean2%>%
+  na.omit()%>%
+  mutate(sum_sat = ((Average.SAT_Reading + Average.SAT_Writing)/2) + Average.SAT_Math)
+
+data.clean4 <- select(data.clean3,-"Average.SAT_Reading") 
+data.clean5 <- select(data.clean4,-"Average.SAT_Writing") 
+data.clean6 <- select(data.clean5,-"Average.SAT_Math") 
+data.clean7 <- select(data.clean6, -"Grade")
+data.clean8 <- select(data.clean7, -"X..English.Language.Learner")
+data.clean9 <- data.clean8 %>% 
+  mutate(ratio.gender = X..Males/X..Females )
+
+```
+
+# Renaming the Columns
+
+The remaining 15 variables selected by data cleaning were renamed for simplicity and unity. The "rename" function was primarily used to do this job.
+
+```{r}
+data.final <- data.clean9 %>% 
+  rename(pct.first.language.not.english = X..First.Language.Not.English) %>% 
+  rename(pct.students.with.disabilities = X..Students.With.Disabilities) %>% 
+  rename(pct.economically.disadvantaged = X..Economically.Disadvantaged) %>% 
+  rename(pct.african.american = X..African.American) %>% 
+  rename(pct.asian = X..Asian) %>% 
+  rename(pct.hispanic = X..Hispanic) %>% 
+  rename(pct.white = X..White) %>% 
+  rename(pct.native.american = X..Native.American) %>% 
+  rename(pct.native.hawaiian.pacific.islander = X..Native.Hawaiian..Pacific.Islander) %>% 
+  rename(pct.males = X..Males) %>% 
+  rename(pct.females = X..Females) %>% 
+  rename(school.name = School.Name) %>% 
+  rename(town = Town) %>% 
+  rename(average.teacher.salary = Average.Salary) %>% 
+  rename(pct.multi.race.non.hispanic = X..Multi.Race..Non.Hispanic) %>% 
+  rename(pct.attending.college = X..Attending.College) %>% 
+  rename(sum.SAT = sum_sat) %>% 
+  rename(average.in.district.expenditures.per.pupil = Average.In.District.Expenditures.per.Pupil)
+```
+
+# EDA (Exploratory Data Analysis)
+
+An Exploratory Data Analysis (EDA) was performed to observed the data before creating any assumptions. It was utilized to identify errors, patterns, and outlines in the data set.
+
+## 1. Sum of SAT Scores
+
+```{r}
+data.final%>%
+  ggplot(aes(sum.SAT)) +
+  geom_histogram(size= 1, alpha = .8, binwidth = 30, color="black", fill="hotpink1")
+```
+
+## 2. First Language Not English
+
+```{r}
+data.final%>%
+  ggplot(aes(pct.first.language.not.english)) +
+  geom_histogram(size = 1, alpha = .8, binwidth = 3, color="black", fill="royalblue1")
+```
+
+## 3. Average In-District Expenditure Per Pupil
+
+```{r}
+data.final %>% 
+  ggplot(aes(average.in.district.expenditures.per.pupil)) +
+  geom_histogram(size = 1, alpha = .8, binwidth = 500, color="black", fill="mediumpurple1")
+```
+
+## 4. Economically Disadvantaged
+
+```{r}
+data.final %>% 
+  ggplot(aes(pct.economically.disadvantaged)) + 
+  geom_histogram(size = 1, alpha = .8, binwidth = 2, color="black", fill="cyan2")
+```
+
+## 5. Average Teacher Salary
+
+```{r}
+data.final %>% 
+  ggplot(aes(average.teacher.salary)) +   
+  geom_histogram(size = 1, alpha = .8, binwidth = 950, color="black", fill="chartreuse1")
+```
+
+## 6. Percentage of Alumini Attending College
+
+```{r}
+data.final %>% 
+  ggplot(aes(pct.attending.college)) +   
+  geom_histogram(size = 1, alpha = .8, binwidth = 1.5, color="black", fill="tomato1")
+```
+
+## 7. Ratio of the Gender
+
+```{r}
+data.final%>%
+  ggplot(aes(ratio.gender)) +
+  geom_histogram(size= 1, alpha = .8, binwidth = .04, color="black", fill="aliceblue")
+```
+
+## 8. (Boxplot) Percentage of Race by School
+
+```{r}
+library("reshape2")  
+
+data.bp <- select(data.final, -"school.name", -"town", -"pct.first.language.not.english", -"pct.students.with.disabilities", -"pct.economically.disadvantaged", -"average.teacher.salary", -"average.in.district.expenditures.per.pupil", -"pct.attending.college", -"sum.SAT", -"pct.males", -"pct.females",-"ratio.gender")
+
+data.bp_long <- melt(data.bp)
+
+ggplot(data.bp_long, aes(x = variable, y = value, fill = variable)) +           
+  geom_boxplot()+
+  xlab("Race") +
+  ylab("Percentage") +
+  ggtitle("Race Percentage by School") +
+  theme_bw() +
+  theme(legend.position = "none",
+  # adjust for margins around the plot; t: top; r: right; b: bottom; l: left
+  
+        plot.margin = margin(t = 5, r = 50, b = 5, l = 0, unit = "pt"),
+        axis.text.x = element_text(angle = -60, vjust = 0, hjust = 0))                               # Install reshape2 package
+```
+
+# Multiple Linear Regression
+
+We performed a multiple regression on the data using the linear model and summary function. After performing backward selection, the model demonstrated that the percent of economically disadvantaged students, the percent of students of certain races (ie. Asian, Hispanic, African American, White, Native American), and the percent of college matriculation were significant at the .001 level. Furthermore, the R-squared value was 0.85, indicating a relatively high correlation between the aforementioned variables and the average SAT score.
+
+```{r}
+fit <- lm(sum.SAT ~ pct.first.language.not.english + pct.students.with.disabilities + pct.economically.disadvantaged + pct.african.american + pct.asian + pct.hispanic + pct.white + pct.native.american + pct.native.hawaiian.pacific.islander + pct.multi.race.non.hispanic + ratio.gender + average.teacher.salary + average.in.district.expenditures.per.pupil + pct.attending.college, data.final)
+summary(fit)
+
+fit.backward.1 <- update(fit, .~. - pct.students.with.disabilities)
+#summary(fit.backward.1)
+
+fit.backward.2 <- update(fit.backward.1, .~. - pct.multi.race.non.hispanic)
+#summary(fit.backward.2)
+
+fit.backward.3 <- update(fit.backward.2, .~. - average.in.district.expenditures.per.pupil)
+#summary(fit.backward.3)
+
+fit.backward.4 <- update(fit.backward.3, .~. - pct.first.language.not.english)
+#summary(fit.backward.4)
+
+fit.backward.5 <- update(fit.backward.4, .~. - average.teacher.salary)
+#summary(fit.backward.5)
+
+fit.backward.6 <- update(fit.backward.5, .~. - ratio.gender )
+#summary(fit.backward.6)
+
+fit.final <- update(fit.backward.6, .~. - pct.native.hawaiian.pacific.islander)
+summary(fit.final)
+```
+
+## Checking for Linearity and Homoscedasticity
+
+To validate our assumptions, we used the plot function to create a Residual vs. Fitted plot and Normality QQplot. The Residual vs Fitted plot showed an equal distribution of points above and below the line, indicating homoscedasity, and our Normality QQplot demonstrated a linear relationship.
+
+```{r}
+res1 <- plot(fit.final, 1)
+
+norm1 <- plot(fit.final, 2)
+```
+
+## Relaxed Lasso
+
+Additionally, we performed relaxed lasso. Using the package glmnet, the variables selected were: percent economically disadvantaged, percent African American, percent Asian, percent Hispanic, percent Native American, percent native Hawaiian Pacific Islander, percent multi-race non Hispanic, percent attending college, and gender ratio.
+
+```{r}
+data.final1 <- data.final %>% select(-c(school.name, town))
+y <- data.final$sum.SAT
+x.fl <- model.matrix(sum.SAT~., data.final1)[, -1]
+set.seed(10)
+fit.cv <- cv.glmnet(x.fl, y, alpha = 1, nfolds=10)
+
+coef.min <- coef(fit.cv, s="lambda.min")  #s=c("lambda.1se","lambda.min") or lambda value
+coef.min <- coef.min[which(coef.min !=0),]   # get the non=zero coefficients
+
+coef.min  # the set of predictors chosen
+rownames(as.matrix(coef.min))
+var.min <- rownames(as.matrix(coef.min))[-1]
+```
+
+```{r}
+plot(fit.cv)
+```
+
+```{r}
+data.final2 <- data.final1[,c("sum.SAT", var.min)]
+fit.min.lm <- lm(sum.SAT~., data.final2)
+summary(fit.min.lm)
+
+fit.lm.backward.1 <- update(fit.min.lm, .~. - ratio.gender)
+summary(fit.lm.backward.1)
+
+fit.lm.backward.2 <- update(fit.lm.backward.1, .~. - pct.native.hawaiian.pacific.islander)
+summary(fit.lm.backward.2)
+
+fit.lm.backward.3 <- update(fit.lm.backward.2, .~. - pct.hispanic)
+summary(fit.lm.backward.3)
+
+fit.lm.final <- update(fit.lm.backward.3, .~. - pct.native.american)
+summary(fit.lm.final)
+```
+
+# Confidence Interval
+
+```{r}
+confint.default(fit.lm.final)
+```
+
+# Decision Tree
+
+```{r}
+library(rpart.plot)
+library(partykit)
+
+data.tree <- select(data.final, -"school.name", -"town")
+fit1<- rpart(sum.SAT~., data.tree)
+par(mfrow = c(1,2))
+plot(as.party(fit1, main = "Decision Tree"))
+```
+
+# Additional Data Cleaning for Heat Map
+
+```{r}
+#Data Cleaning for Heat Map
+#adding "county" column to data.final
+
+citydata <- read.csv("data/city_data.csv", header = TRUE)
+
+citydata1 <- citydata[1:2] %>% 
+  rename(town = Name)
+
+data.final['county'] <- NA 
+data.finalx <- data.final %>% 
+  select(school.name, sum.SAT, town, county, pct.economically.disadvantaged, average.in.district.expenditures.per.pupil)
+#data.finalx
+
+
+data.finalxx <- data.finalx%>%
+  mutate(county=citydata1$County[match(town, citydata1$town)])
+
+# manually adding the county for towns that do not exist in the citydata dataset
+
+#Hyannis
+data.finalxx$county[10] <- "Barnstable"
+#Hyde Park
+data.finalxx$county[17] <- "Suffolk"
+data.finalxx$county[19] <- "Suffolk"
+data.finalxx$county[34] <- "Suffolk"
+#Dorchester
+data.finalxx$county[20] <- "Suffolk"
+data.finalxx$county[22] <- "Suffolk"
+data.finalxx$county[25] <- "Suffolk"
+data.finalxx$county[26] <- "Suffolk"
+data.finalxx$county[31] <- "Suffolk"
+data.finalxx$county[38] <- "Suffolk"
+#Roxbury
+data.finalxx$county[29] <- "Suffolk"
+data.finalxx$county[30] <- "Suffolk"
+data.finalxx$county[33] <- "Suffolk"
+data.finalxx$county[35] <- "Suffolk"
+#Brighton
+data.finalxx$county[23] <- "Suffolk"
+data.finalxx$county[32] <- "Suffolk"
+#Charlestown
+data.finalxx$county[24] <- "Suffolk"
+#Jamaica Plain
+data.finalxx$county[39] <- "Suffolk"
+#Hathorne
+data.finalxx$county[94] <- "Essex"
+#Baldwinville
+data.finalxx$county[176] <- "Worcester"
+#Shelburne Falls
+data.finalxx$county[170] <- "Franklin"
+#Newtonville
+data.finalxx$county[184] <- "Middlesex"
+#Newton Centre
+data.finalxx$county[185] <- "Middlesex"
+
+#Whitinsville
+data.finalxx$county[195] <- "Worcester"
+#Fiskdale
+data.finalxx$county[253] <- "Worcester"
+data.finalxx$county[254] <- "Worcester"
+#Byfield
+data.finalxx$county[258] <- "Essex"
+
+
+#North Eastham
+data.finalxx$county[180] <- "Barnstable"
+#East Boston
+data.finalxx$county[27] <- "Suffolk"
+#East Sandwich
+data.finalxx$county[225] <- "Barnstable"
+#South Boston 
+data.finalxx$county[28] <- "Suffolk"
+#West Roxbury 
+data.finalxx$county[40] <- "Suffolk"
+data.finalxx$county[41] <- "Suffolk"
+#North Chelmsford
+data.finalxx$county[50] <- "Middlesex"
+#North Easton
+data.finalxx$county[65] <- "Bristol"
+# South Yarmouth
+data.finalxx$county[90] <- "Barnstable"
+#North Dighton 
+data.finalxx$county[91] <- "Bristol"
+# South Deerfield
+data.finalxx$county[98] <- "Franklin"
+# South Hamilton
+data.finalxx$county[113] <- "Essex"
+data.finalxx[which(is.na(data.finalxx$county)),]
+#South Easton
+data.finalxx$county[238] <- "Bristol"
+
+```
+
+```{r}
+
+data.hm <- data.finalxx %>% 
+  select (county, sum.SAT) %>% 
+  group_by(county) %>% 
+  mutate(counties=county)%>%
+  summarise(county.SAT = mean(sum.SAT, na.rm = TRUE))
+
+data.hm['state'] <- "MA"
+data.hm['fips'] <- c(25001, 25003, 25005, 25007, 25009, 25011, 25013, 25015, 25017, 25019, 25021, 25023, 25025, 25027)
+
+SAT.plot <- plot_usmap(regions = "counties",                   
+    data = data.hm, 
+    values = "county.SAT", include = c("MA")) + 
+    scale_fill_gradient(
+      low = "white", high = "red", 
+      name = "Average SAT score", 
+      label = scales::comma) + 
+    labs(title = "Average SAT score by County", subtitle = "Continental US States") +
+    theme(legend.position = "right")
+
+SAT.plot
+```
+
+```{r}
+
+data.hm <- data.finalxx %>% 
+  select (county, pct.economically.disadvantaged) %>% 
+  group_by(county) %>% 
+  mutate(counties=county)%>%
+  summarise(county.econ = mean(pct.economically.disadvantaged, na.rm = TRUE))
+
+data.hm['state'] <- "MA"
+data.hm['fips'] <- c(25001, 25003, 25005, 25007, 25009, 25011, 25013, 25015, 25017, 25019, 25021, 25023, 25025, 25027)
+
+econ.plot <- plot_usmap(regions = "counties",                   
+    data = data.hm, 
+    values = "county.econ", include = c("MA")) + 
+    scale_fill_gradient(
+      low = "white", high = "red", 
+      name = "Percent Economically Disadvantaged", 
+      label = scales::comma) + 
+    labs(title = "Percent Economically Disadvantaged by County", subtitle = "Continental US States") +
+    theme(legend.position = "right")
+
+econ.plot
+```
+
+```{r}
+data.hm <- data.finalxx %>% 
+  select (county, average.in.district.expenditures.per.pupil) %>% 
+  group_by(county) %>% 
+  mutate(counties=county)%>%
+  summarise(county.expenditure = mean(average.in.district.expenditures.per.pupil, na.rm = TRUE))
+
+data.hm['state'] <- "MA"
+data.hm['fips'] <- c(25001, 25003, 25005, 25007, 25009, 25011, 25013, 25015, 25017, 25019, 25021, 25023, 25025, 25027)
+
+expenditure.plot <- plot_usmap(regions = "counties",                   
+    data = data.hm, 
+    values = "county.expenditure", include = c("MA")) + 
+    scale_fill_gradient(
+      low = "white", high = "red", 
+      name = "Average In District Expenditures Per Pupil", 
+      label = scales::comma) + 
+    labs(title = "Average In District Expenditures Per Pupil", subtitle = "Continental US States") +
+    theme(legend.position = "right")
+
+expenditure.plot
+
+```
+
+# Ontology Heat Map
+
+We created an ontology heat map using the pheatmap function to determine which states had a similar racial distribution with Massachusetts and thus establish which US states the findings of our study could be generalized on.
+
+```{r}
+library(pheatmap)
+library(Matrix)
+data.states.raw <- read.csv("data/racepct_bystate_2017.csv", header = TRUE)
+data.states <- data.states.raw %>%
+  rename(hispanic = Hispanic..of.any.race.) %>% 
+  rename(white = Non.Hispanic.White) %>% 
+  rename(black = Non.Hispanic.Black) %>% 
+  rename(asian = Non.Hispanic.Asian) %>%
+  rename(americanindian = Non.Hispanic.American.Indian)  
+
+data.states$hispanic <- as.numeric(sub("%", "", data.states$hispanic))
+data.states$white <- as.numeric(sub("%", "", data.states$white))
+data.states$black <- as.numeric(sub("%", "", data.states$black))
+data.states$asian <- as.numeric(sub("%", "", data.states$asian))
+data.states$americanindian <- as.numeric(sub("%", "", data.states$americanindian))
+  
+row.names(data.states) <- data.states$State
+
+data.states <- data.states[-1]
+
+for (i in 1:nrow(data.states)){
+  data.states[i,] <- data.states[i,] - data.states["Massachusetts",]
+}
+
+mt <- as.matrix(data.states)
+mt <- t(mt)
+pheatmap(mt, cellwidth = 8, cellheight = 20, width=1, height=2)
+```
